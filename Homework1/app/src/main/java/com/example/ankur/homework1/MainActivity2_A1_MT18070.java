@@ -52,9 +52,15 @@ public class MainActivity2_A1_MT18070 extends AppCompatActivity {
         str = "Course4: " + letter.getString("course4");
         textView.setText(str);
 
-        Log.i(TAG, "State of the MainActivity2_A1_MT18070 changed from " + prev + " Create");
-        Toast.makeText(getApplicationContext(), "State of the MainActivity2_A1_MT18070 changed from " + prev + " to Create",
-                Toast.LENGTH_SHORT).show();
+        if (prev == "") {
+            Log.i(TAG, "State of the MainActivity2_A1_MT18070 is Create");
+            Toast.makeText(getApplicationContext(), "State of the MainActivity2_A1_MT18070 is Create",
+                    Toast.LENGTH_SHORT).show();
+        } else {
+            Log.i(TAG, "State of the MainActivity2_A1_MT18070 changed from " + prev + " Create");
+            Toast.makeText(getApplicationContext(), "State of the MainActivity2_A1_MT18070 changed from " + prev + " to Create",
+                    Toast.LENGTH_SHORT).show();
+        }
         prev = "Create";
     }
 
