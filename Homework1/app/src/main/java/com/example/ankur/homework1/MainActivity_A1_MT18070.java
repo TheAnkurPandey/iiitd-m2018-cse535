@@ -156,4 +156,5 @@ public class MainActivity_A1_MT18070 extends AppCompatActivity {
                 Toast.LENGTH_SHORT).show();
         prev = "Destroy";
     }
+
 }
