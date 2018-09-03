@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">Homework2</string>
+    <string name = "Start">Start</string>
+    <string name = "Stop">Stop</string>
+    <string name = "CheckConnection">Check Connection</string>
+    <string name = "Download">Download</string>
+
+</resources>
