@@ -5,8 +5,12 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.PowerManager;
 import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentTransaction;
@@ -26,6 +30,10 @@ import com.opencsv.CSVWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 
 import okhttp3.MediaType;
 import okhttp3.MultipartBody;
@@ -42,7 +50,7 @@ public class DetailFragment extends Fragment {
     RadioGroup mRadioGroup;
     Button mButton;
     SQLiteDatabase sqLiteDatabase;
-    //ProgressDialog mProgressDialog;
+    ProgressDialog mProgressDialog;
 
     boolean mIsResetButtonClicked;
 
@@ -149,6 +157,11 @@ public class DetailFragment extends Fragment {
         mButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
+                if(!checkInternetConnection()) {
+                    Toast.makeText(getActivity(), "Internet is not available", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+
                 exportDB();
                 Toast.makeText(getActivity(), "solution submitted", Toast.LENGTH_SHORT).show();
                 /*mProgressDialog = new ProgressDialog(getActivity());
@@ -224,7 +237,7 @@ public class DetailFragment extends Fragment {
         Toast.makeText(getActivity(), file.getAbsolutePath(), Toast.LENGTH_SHORT).show();
         try {
             if (!file.createNewFile()) {
-                Toast.makeText(getActivity(), "File not created", Toast.LENGTH_SHORT).show();
+                Toast.makeText(getActivity(), "File created", Toast.LENGTH_SHORT).show();
             }
             CSVWriter csvWrite = new CSVWriter(new FileWriter(file));
             Cursor cur = sqLiteDatabase.rawQuery("SELECT * FROM Question_Bank",null);
@@ -246,5 +259,169 @@ public class DetailFragment extends Fragment {
         String extension = MimeTypeMap.getFileExtensionFromUrl(path);
         return MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension);
     }
+
+    // Check the status of internet.
+    private boolean checkInternetConnection() {
+        // Safety check.
+        if (getActivity() == null)
+            return false;
+
+        ConnectivityManager connectivityManager = (ConnectivityManager)getActivity().getSystemService(Context.CONNECTIVITY_SERVICE);
+
+        // Safety check.
+        if (connectivityManager == null)
+            return false;
+
+        NetworkInfo activeNetworkInfo = connectivityManager.getActiveNetworkInfo();
+
+        if (activeNetworkInfo!=null && activeNetworkInfo.isConnected())
+            Log.i("Output", "Internet is available.");
+        else
+            Log.i("Output", "Internet is not available.");
+
+        return activeNetworkInfo!=null && activeNetworkInfo.isConnected();
+    }
+
+    // Inner class.
+    private class Downloader extends AsyncTask<String, Integer, String> {
+
+        private Context mcontext;
+        private PowerManager.WakeLock mWakeLock;
+
+        public Downloader(Context context) {
+            this.mcontext = context;
+        }
+
+        // doInBackground() is executing heavy task in separate background thread.
+        @Override
+        protected String doInBackground(String... Url) {
+
+            // Creating placeholder object for input, output, HttpURLConnection.
+            InputStream inputStream = null;
+            OutputStream outputStream = null;
+            HttpURLConnection connection = null;
+
+            try {
+
+                // Step 2:  Establish the connection.
+                URL url = new URL(Url[0]);
+                connection = (HttpURLConnection) url.openConnection();
+                connection.connect();
+                Log.i("Output", "Connection is established.");
+
+                // Step 3: Check the status code.
+                if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
+                    Log.i("Output", "Server responded with HTTP " + connection.getResponseCode()
+                            + " " + connection.getResponseMessage());
+                    return "Server responded with HTTP " + connection.getResponseCode() + " " + connection.getResponseMessage();
+
+                }
+
+                // Store the size for percentage calculation.
+                int contentLength = connection.getContentLength();
+
+                // download the file
+                inputStream = connection.getInputStream();
+
+                // Safety check.
+                if (getActivity() == null)
+                    return null;
+
+                outputStream = getActivity().openFileOutput("mc.mp3", Context.MODE_PRIVATE);
+
+                byte data[] = new byte[4096];
+                long total = 0;
+                int count;
+
+                // Step 4: Read the data in inputStream, publish the progress and write the data to outputStream.
+                while ((count = inputStream.read(data)) != -1) {
+
+                    // allow canceling with back button
+                    if (isCancelled()) {
+                        inputStream.close();
+                        return null;
+                    }
+
+                    total += count;
+
+                    // publish the progress, work only when total length is known.
+                    if (contentLength > 0)
+                        publishProgress((int) (total * 100 / contentLength));
+
+                    outputStream.write(data, 0, count);
+                }
+                Log.i("Output", "Reading the data in inputStream, " +
+                        "publishing the progress and writing the data to outputStream is completed.");
+
+            } catch (Exception e) {
+                Log.i("Output", "Exception is caught." + e.toString());
+                return e.toString();
+
+            } finally {
+
+                // Step 5: Cleanup task.
+                try {
+                    if (outputStream != null)
+                        outputStream.close();
+                    if (inputStream != null)
+                        inputStream.close();
+                } catch (IOException ioException) {
+                    Toast.makeText(getActivity(), ioException.toString(), Toast.LENGTH_LONG).show();
+                }
+
+                if (connection != null)
+                    connection.disconnect();
+
+                Log.i("Output", "Cleanup task is done.");
+            }
+            return null;
+        }
+
+
+
+        @Override
+        protected void onPreExecute() {
+            super.onPreExecute();
+            // Take CPU lock.
+            PowerManager powerManager = (PowerManager) mcontext.getSystemService(Context.POWER_SERVICE);
+
+            // Safety check.
+            if (powerManager == null)
+                return ;
+
+            mWakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, getClass().getName());
+
+            mWakeLock.acquire(10000);
+            mProgressDialog.show();
+        }
+
+        @Override
+        protected void onProgressUpdate(Integer... progress) {
+            super.onProgressUpdate(progress);
+
+            mProgressDialog.setIndeterminate(false);
+            mProgressDialog.setMax(100);
+            mProgressDialog.setProgress(progress[0]);
+        }
+
+        @Override
+        protected void onPostExecute(String result) {
+
+            // Release the lock and dismiss the progress dialog.
+            mWakeLock.release();
+            mProgressDialog.dismiss();
+
+            if (result != null) {
+                Log.i("Output", "Download error: "+result);
+                Toast.makeText(mcontext,"Download error: "+result, Toast.LENGTH_LONG).show();
+            }
+            else {
+                Log.i("Output", "File is downloaded.");
+                Toast.makeText(mcontext,"File downloaded", Toast.LENGTH_SHORT).show();
+            }
+
+        }
+    }
+
 
 }
